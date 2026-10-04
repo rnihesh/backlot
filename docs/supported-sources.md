@@ -325,7 +325,7 @@ than there being a set per type.
 | Endpoint | Notes |
 |---|---|
 | `search/jql` | `GET` or `POST`. JQL `project =`, `text`\|`summary`\|`description` `~` |
-| `issue/{key}` | |
+| `issue/{key}` | `{key}` is the issue key or its numeric `id`, here and on `comment` |
 | `issue/{key}/comment` | `startAt`, `maxResults` (max 100), `orderBy` `created`/`+created`/`-created` |
 | `field` | |
 | `issueLinkType` | |

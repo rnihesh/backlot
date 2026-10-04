@@ -2806,6 +2806,19 @@ def jira_by_key(conn, key, visible_ids=None) -> sqlite3.Row | None:
     return conn.execute(f"SELECT * FROM jira_issues WHERE key = ?{clause}", [key, *cp]).fetchone()
 
 
+def jira_by_numeric_id(conn, nid: str, visible_ids=None) -> sqlite3.Row | None:
+    """One issue by the numeric ``id`` the API reports for it, matched as spelled.
+
+    That id is ``synth.jira_numeric_id`` of the key, hashed at serve time rather than stored, so
+    this hashes every visible key until one matches. Two keys that hash alike answer the first by
+    key."""
+    clause, cp = _acl_clause("jira", visible_ids=visible_ids)
+    for r in conn.execute(f"SELECT key FROM jira_issues WHERE 1=1{clause} ORDER BY key", cp):
+        if str(synth.jira_numeric_id(r["key"])) == nid:
+            return jira_by_key(conn, r["key"], visible_ids=visible_ids)
+    return None
+
+
 def _file_head_clause(visible_ids=None, tbl: str = "t") -> tuple[str, list]:
     """SQL restricting `tbl` to the HEAD of its `(repo, path)` — no snapshot the caller can also
     see is newer.

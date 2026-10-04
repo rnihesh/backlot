@@ -495,6 +495,67 @@ def test_atlassian_comment_ids_are_numeric_on_the_wire(tmp_path):
         assert cc["_links"]["webui"].endswith(f"focusedCommentId={cc['id']}")
 
 
+def test_jira_reads_an_issue_by_its_numeric_id(tmp_path):
+    """Measured on a Jira Cloud tenant on 2026-10-03: `issue/{id}` and `issue/{id}/comment` with
+    the numeric id an issue's own body and `self` link report answer what its key answers, and the
+    same id with a leading `0` is the not-found 404. The id resolves per caller, like the key."""
+    import yaml
+
+    s = tiny_corpus(
+        tmp_path,
+        [
+            {
+                "source_type": "jira",
+                "doc_id": "j-open",
+                "project": "payments",
+                "title": "Gateway 502s",
+                "content": "Body.",
+                "author_email": "ava@acme.com",
+                "visibility": "public",
+                "key": "PAY-7",
+                "comments": [{"content": "hi", "author_email": "bob@acme.com"}],
+            },
+            {
+                "source_type": "jira",
+                "doc_id": "j-shut",
+                "project": "secrets",
+                "title": "Rotation",
+                "content": "Body.",
+                "author_email": "bob@acme.com",
+                "visibility": "private",
+                "key": "SEC-1",
+            },
+        ],
+    )
+    with client_for(s, reload=True) as c:
+        written = yaml.safe_load(s.tokens_path.read_text())
+        tokens = {u["email"]: u["token"] for u in written["users"]}
+        h = {"Authorization": f"Bearer {s.admin_token}"}
+        base = "/atlassian/rest/api/3/issue"
+        issue = c.get(f"{base}/PAY-7", headers=h).json()
+        nid = issue["id"]
+        assert issue["self"].endswith(f"/rest/api/3/issue/{nid}")
+        for v in ("2", "3"):
+            by_id = c.get(f"/atlassian/rest/api/{v}/issue/{nid}", headers=h)
+            assert by_id.status_code == 200, v
+            assert by_id.json() == c.get(f"/atlassian/rest/api/{v}/issue/PAY-7", headers=h).json()
+        comments = c.get(f"{base}/{nid}/comment", headers=h)
+        assert comments.status_code == 200
+        assert comments.json() == c.get(f"{base}/PAY-7/comment", headers=h).json()
+        missing = "Issue does not exist or you do not have permission to see it."
+        for path in (f"0{nid}", f"0{nid}/comment"):
+            r = c.get(f"{base}/{path}", headers=h)
+            assert r.status_code == 404, path
+            assert r.json()["errorMessages"] == [missing], path
+
+        shut = c.get(f"{base}/SEC-1", headers=h).json()["id"]
+        bob = {"Authorization": f"Bearer {tokens['bob@acme.com']}"}
+        ava = {"Authorization": f"Bearer {tokens['ava@acme.com']}"}
+        assert c.get(f"{base}/{shut}", headers=bob).json()["key"] == "SEC-1"
+        assert c.get(f"{base}/{shut}", headers=ava).status_code == 404
+        assert c.get(f"{base}/{shut}/comment", headers=ava).status_code == 404
+
+
 def test_confluence_dates_an_epoch_zero_page_on_both_routes(tmp_path):
     """1970-01-01T00:00:00Z stores as 0, and both routes that date a page must serve it.
 

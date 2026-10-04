@@ -264,15 +264,23 @@ def _jira_container_for_key(conn, token: str, request: Request | None = None) ->
 
 def _resolve_jira_key(request: Request, conn, key: str, ids):
     """One issue by its served key, ACL-scoped — a unique-indexed column lookup (see
-    store.jira_by_key).
+    store.jira_by_key) — or by the numeric `id` its body and `self` link carry.
 
-    One line, because the whole key is stored. Resolving it in parts instead — split the key, map
-    the prefix to a project through `_jira_container_for_key`, look the suffix up scoped to it —
-    lets that function's three-way tolerance into the ISSUE-KEY namespace. The tolerance is a
-    deliberate and correct affordance for the JQL project TOKEN, where real Jira pickers accept a
-    key OR a name, but here it makes `payments-7` resolve to `PAY-7`'s issue and issue-key lookup
-    case-insensitive. Matching the stored key directly has no seam for either to enter."""
-    return store.jira_by_key(conn, key, visible_ids=ids)
+    The key is matched whole, because the whole key is stored. Resolving it in parts instead —
+    split the key, map the prefix to a project through `_jira_container_for_key`, look the suffix
+    up scoped to it — lets that function's three-way tolerance into the ISSUE-KEY namespace. The
+    tolerance is a deliberate and correct affordance for the JQL project TOKEN, where real Jira
+    pickers accept a key OR a name, but here it makes `payments-7` resolve to `PAY-7`'s issue and
+    issue-key lookup case-insensitive. Matching the stored key directly has no seam for either to
+    enter.
+
+    Measured on a Jira Cloud tenant on 2026-10-03: `issue/{id}` and `issue/{id}/comment` with the
+    issue's numeric id answered 200 with the body its key answers, and the same id with a leading
+    `0` answered the not-found 404, so the id is matched as spelled rather than as a number."""
+    row = store.jira_by_key(conn, key, visible_ids=ids)
+    if row is None and key.isascii() and key.isdigit():
+        row = store.jira_by_numeric_id(conn, key, visible_ids=ids)
+    return row
 
 
 @router.get(
