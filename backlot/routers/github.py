@@ -2379,8 +2379,10 @@ def _ref_exists(conn, owner: str, repo: str, ref: str, ids) -> bool:
 async def get_tree(
     owner: str, repo: str, ref: str, request: Request, recursive: str | None = Query(None)
 ):
-    """The repo's file set as a git tree (real API shape). `recursive` (any truthy value,
-    GitHub-style) returns every blob/tree entry; otherwise only the entries directly under root.
+    """The repo's file set as a git tree (real API shape). `recursive`, sent with any value,
+    returns every blob/tree entry; without it, only the entries directly under root. Measured on
+    psf/requests on 2026-10-03: `0`, `false` and an empty value recursed like `1`, `true` and
+    `abc`, and only a request without the parameter answered the flat tree.
 
     `ref` selects WHICH tree, exactly as on real GitHub: a SUBTREE's own sha — the one a client
     reads out of a parent listing's `tree` entry — answers that directory's entries, with paths
@@ -2438,7 +2440,7 @@ async def get_tree(
         entries = [
             {**e, "path": e["path"][len(prefix) :]} for e in entries if e["path"].startswith(prefix)
         ]
-    if not _truthy(recursive):
+    if recursive is None:
         entries = [e for e in entries if "/" not in e["path"]]
     entries, truncated = _cap_tree(entries)
     tree_sha = _repo_tree_sha(repo) if subtree is None else _dir_sha(repo, subtree)
@@ -2659,10 +2661,10 @@ async def list_branches(
     `?protected=` selects, so it is honoured rather than ignored: a client that asked for the
     protected branches and got an unprotected one back would read that branch as push-guarded.
     Real has three answers — only protected branches for a true value, only unprotected ones for
-    `false`, and all of them when the parameter is omitted — and parses the value the way
-    `?recursive=` is parsed, every non-empty value but `false`/`0` reading true. Measured on
-    fastapi/fastapi (22 branches, one of them protected): `true`/`1`/`TRUE`/`yes`/`banana` answer
-    1, `false`/`0` answer 21, an empty value and an omitted one answer 22.
+    `false`, and all of them when the parameter is omitted — and reads every non-empty value but
+    `false`/`0` as true. Measured on fastapi/fastapi (22 branches, one of them protected):
+    `true`/`1`/`TRUE`/`yes`/`banana` answer 1, `false`/`0` answer 21, an empty value and an omitted
+    one answer 22.
 
     All three answers are distinct for a repo whose `subtype: "repo"` record states which branches
     are protected. For one that does not, every branch is unprotected and real's last two coincide
@@ -3049,7 +3051,7 @@ _UNSTATED_HEAD_REF = "feature"
 
 
 def _truthy(v: str | None) -> bool:
-    """GitHub's `?recursive=` accepts any non-empty, non-'0'/'false' value as true."""
+    """GitHub's `?protected=` on /branches reads any non-empty, non-'0'/'false' value as true."""
     return v is not None and v.lower() not in ("", "0", "false")
 
 

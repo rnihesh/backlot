@@ -1068,6 +1068,19 @@ def test_github_tree_non_recursive(gh_client, gh_admin_h, gh_org):
     assert paths == {"README.md", "src", "config"}  # top level only: root file + top dirs
 
 
+@pytest.mark.parametrize("value", ["1", "true", "abc", "0", "false", ""])
+def test_github_tree_recurses_for_any_recursive_value(gh_client, gh_admin_h, gh_org, value):
+    """Measured on psf/requests on 2026-10-03: `recursive` sent with any value, `0`, `false` and
+    an empty one included, answered the recursive tree; only its absence answered the flat one."""
+    c, _ = gh_client
+    body = c.get(
+        f"/github/repos/{gh_org}/codebase/git/trees/main",
+        headers=gh_admin_h,
+        params={"recursive": value},
+    ).json()
+    assert "src/pkg/utils.py" in {e["path"] for e in body["tree"]}, f"?recursive={value!r}"
+
+
 @pytest.mark.parametrize(
     "params,expected",
     [({}, {"main.py", "pkg"}), ({"recursive": "1"}, {"main.py", "pkg", "pkg/utils.py"})],
@@ -1173,7 +1186,7 @@ def test_github_lists_the_refs_a_client_enumerates_before_it_reads(gh_client, gh
     # unprotected ones for `false`/`0`, and all of them for an empty or omitted parameter —
     # measured on fastapi/fastapi, 22 branches with one protected, answering 1 / 21 / 22. The one
     # branch here is unprotected, so those last two coincide and `_truthy`'s split is the whole
-    # rule, as it is for `?recursive=` on git/trees.
+    # rule.
     for value, kept in (("true", 0), ("1", 0), ("yes", 0), ("false", 1), ("0", 1), ("", 1)):
         r = c.get(
             f"/github/repos/{gh_org}/codebase/branches",
